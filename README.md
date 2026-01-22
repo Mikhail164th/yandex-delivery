@@ -50,7 +50,12 @@ Authorization: Bearer <OAuth-token>
 | Production | `https://b2b.taxi.yandex.net` |
 | Test | `https://b2b.taxi.tst.yandex.net` |
 
-**Тестовые данные:** см. [официальную документацию](https://yandex.ru/support2/delivery-profile/ru/api/express/quickstart)
+**Тестовые данные** (из [официальной документации](https://yandex.ru/support2/delivery-profile/ru/api/other-day/index)):
+```
+Token: y2_AgAAAAD04omrAAAPeAAAAAACRpC94Qk6Z5rUTgOcTgYFECJllXYKFx8
+Warehouse (platform_station_id): fbed3aa1-2cc6-4370-ab4d-59c5cc9bb924
+```
+> Это публичный тестовый токен от Яндекса для тестовой среды. Реальные курьеры не поедут.
 
 ## Express Delivery API
 
