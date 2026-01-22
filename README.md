@@ -702,9 +702,264 @@ GET  /api/1/nomenclature          # Меню
 
 **Публичного API нет.** Используется внутренний API для мобильных приложений и сайта.
 
-## Известные эндпоинты
+---
 
-Получены через анализ сетевого трафика:
+## Retail API (Магазины)
+
+API для работы с продуктовыми магазинами (Магнит, Пятёрочка, Перекрёсток и др.).
+
+> **Универсальность:** API идентичен для всех магазинов — меняется только `place_slug`.
+
+### Base URL
+
+```
+https://eda.yandex.ru
+```
+
+### Обязательные параметры
+
+Все запросы требуют query-параметры геолокации:
+
+```
+?placeSlug={slug}&longitude={lon}&latitude={lat}
+```
+
+Пример:
+```
+?placeSlug=magnit_celevaya_k6g7p&longitude=30.256983&latitude=59.836305
+```
+
+### Эндпоинты
+
+| Endpoint | Метод | Описание |
+|----------|-------|----------|
+| `/api/v2/catalog/{slug}` | GET | Информация о магазине |
+| `/api/v2/menu/goods` | POST | Товары магазина (пагинация) |
+| `/api/v2/menu/goods/get-categories` | POST | Категории товаров |
+| `/api/v1/menu/search` | POST | **Поиск товаров** |
+| `/api/v1/cart` | POST | **Добавить товар в корзину** |
+| `/api/v1/cart/{cart_item_id}` | POST | **Изменить количество товара** |
+| `/eats/v1/cart/v2/multi-carts` | POST | Список всех корзин пользователя |
+| `/eats/v1/cart/v2/full-carts` | POST | Полная информация о корзине |
+| `/api/v1/cart/change_place` | POST | Сменить магазин в корзине |
+| `/api/v2/cart/go-checkout` | POST | Подготовка к оплате |
+
+---
+
+### Поиск товаров
+
+```http
+POST /api/v1/menu/search?placeSlug={slug}&longitude={lon}&latitude={lat}
+Content-Type: application/json
+```
+
+**Request:**
+```json
+{
+  "place_slug": "magnit_celevaya_k6g7p",
+  "text": "молоко"
+}
+```
+
+**Response:**
+```json
+{
+  "payload": {
+    "items": [
+      {
+        "id": "uuid-товара",
+        "name": "Молоко Простоквашино пастеризованное 2.5% 930 мл",
+        "price": 89,
+        "weight": "930 мл",
+        "picture_url": "https://..."
+      }
+    ]
+  }
+}
+```
+
+---
+
+### Добавить товар в корзину
+
+```http
+POST /api/v1/cart?placeSlug={slug}&longitude={lon}&latitude={lat}
+Content-Type: application/json
+```
+
+**Request:**
+```json
+{
+  "quantity": 1,
+  "place_slug": "magnit_celevaya_k6g7p",
+  "place_business": "shop",
+  "item_id": "uuid-товара"
+}
+```
+
+**Важно:**
+- `quantity` — это **инкремент**, не абсолютное значение
+- `place_business: "shop"` — обязательно для магазинов (для ресторанов — `"restaurant"`)
+- При добавлении товара из другого магазина появляется попап "Перенести товары?"
+
+---
+
+### Изменить количество товара
+
+```http
+POST /api/v1/cart/{cart_item_id}?placeSlug={slug}&longitude={lon}&latitude={lat}
+Content-Type: application/json
+```
+
+**Request:**
+```json
+{
+  "quantity": 2,
+  "item_options": []
+}
+```
+
+**Важно:**
+- `cart_item_id` — ID товара в корзине (не `item_id` из каталога!)
+- `quantity` — **абсолютное** значение (не инкремент)
+- `quantity: 0` через API даёт ошибку — удаление работает только через UI
+
+---
+
+### Получить все корзины
+
+```http
+POST /eats/v1/cart/v2/multi-carts?longitude={lon}&latitude={lat}
+Content-Type: application/json
+```
+
+**Request:**
+```json
+{
+  "need_items_icons": true
+}
+```
+
+**Response:**
+```json
+{
+  "carts": [
+    {
+      "place_slug": "pyaterochka_abydf",
+      "place_name": "Пятёрочка",
+      "total_price": "266",
+      "delivery_time": "20 – 30 мин",
+      "items_count": 3
+    },
+    {
+      "place_slug": "magnit_celevaya_k6g7p",
+      "place_name": "Магнит",
+      "total_price": "314",
+      "delivery_time": "35 – 45 мин",
+      "items_count": 2
+    }
+  ]
+}
+```
+
+---
+
+### Получить полную корзину
+
+```http
+POST /eats/v1/cart/v2/full-carts?placeSlug={slug}&longitude={lon}&latitude={lat}
+Content-Type: application/json
+```
+
+**Request:**
+```json
+{}
+```
+
+**Response:**
+```json
+{
+  "cart": {
+    "items": [
+      {
+        "cart_item_id": "7015970735",
+        "item_id": "uuid-товара",
+        "name": "Йогурт Teos греческий 2% 140 г",
+        "quantity": 2,
+        "price": 89,
+        "total_price": 178
+      }
+    ],
+    "total_price": 314,
+    "delivery_fee": 0,
+    "min_order_price": 0
+  }
+}
+```
+
+---
+
+### Checkout (подготовка к оплате)
+
+```http
+POST /api/v2/cart/go-checkout?placeSlug={slug}&longitude={lon}&latitude={lat}
+Content-Type: application/json
+```
+
+**Request:**
+```json
+{
+  "address": {
+    "city": "Санкт-Петербург",
+    "street": "улица Танкиста Хрустицкого",
+    "house": "98",
+    "entrance": "1",
+    "floor": "5",
+    "flat": "123",
+    "comment": "Код домофона 123"
+  },
+  "place_slug": "magnit_celevaya_k6g7p",
+  "payment": {
+    "type": "card"
+  }
+}
+```
+
+**Response:** Редирект на `/checkout` с формой оплаты.
+
+---
+
+### UI Flow
+
+```
+1. Поиск товара → /api/v1/menu/search
+2. Добавить в корзину → /api/v1/cart
+   ↳ Если товары из другого магазина → попап "Перенести?"
+3. Изменить количество → /api/v1/cart/{cart_item_id}
+4. Просмотр корзины → /eats/v1/cart/v2/full-carts
+5. Оформление → /api/v2/cart/go-checkout
+6. Оплата → кнопка "Оплатить" (нажимает пользователь)
+```
+
+---
+
+### Известные place_slug
+
+| Магазин | Пример slug | Паттерн |
+|---------|-------------|---------|
+| Магнит | `magnit_celevaya_k6g7p` | `magnit_{location}_{hash}` |
+| Пятёрочка | `pyaterochka_abydf` | `pyaterochka_{hash}` |
+| Перекрёсток | `perekrestok_sxepk` | `perekrestok_{hash}` |
+| Лента | `lenta_{hash}` | `lenta_{hash}` |
+| ВкусВилл | `vkusvill_{hash}` | `vkusvill_{hash}` |
+
+> Slug зависит от геолокации — один магазин в разных районах имеет разные slug.
+
+---
+
+## Restaurant API (Рестораны)
+
+### Известные эндпоинты
 
 | Endpoint | Метод | Описание |
 |----------|-------|----------|
@@ -721,7 +976,7 @@ curl "https://eda.yandex.ru/api/v2/catalog?latitude=55.7558&longitude=37.6173" \
   -H "User-Agent: Mozilla/5.0 ..."
 ```
 
-Ответ:
+**Response:**
 ```json
 {
   "payload": {
@@ -747,7 +1002,7 @@ curl "https://eda.yandex.ru/api/v2/catalog/restaurant-slug/menu?latitude=55.7558
   -H "User-Agent: Mozilla/5.0 ..."
 ```
 
-Ответ:
+**Response:**
 ```json
 {
   "payload": {
@@ -768,12 +1023,14 @@ curl "https://eda.yandex.ru/api/v2/catalog/restaurant-slug/menu?latitude=55.7558
 }
 ```
 
+---
+
 ## Защита
 
-- SmartCaptcha — блокирует автоматические запросы
-- Rate limiting — агрессивный
-- User-Agent — обязателен
-- Cookies — нужны для авторизованных запросов
+- **SmartCaptcha** — блокирует автоматические запросы
+- **Rate limiting** — агрессивный, рекомендуется рандомные паузы между запросами
+- **User-Agent** — обязателен
+- **Cookies** — нужны для авторизованных запросов (корзина, checkout)
 
 ## Reverse Engineering
 
