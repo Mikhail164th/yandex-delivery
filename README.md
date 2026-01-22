@@ -731,18 +731,39 @@ https://eda.yandex.ru
 
 ### Эндпоинты
 
+#### Список магазинов
+
 | Endpoint | Метод | Описание |
 |----------|-------|----------|
-| `/api/v2/catalog/{slug}` | GET | Информация о магазине |
-| `/api/v2/menu/goods` | POST | Товары магазина (пагинация) |
+| `/retail` | GET | HTML страница со всеми магазинами (парсить ссылки) |
+| `/api/v2/catalog/{slug}` | GET | Информация о конкретном магазине |
+
+#### Каталог и поиск
+
+| Endpoint | Метод | Описание |
+|----------|-------|----------|
 | `/api/v2/menu/goods/get-categories` | POST | Категории товаров |
-| `/api/v1/menu/search` | POST | **Поиск товаров** |
-| `/api/v1/cart` | POST | **Добавить товар в корзину** |
-| `/api/v1/cart/{cart_item_id}` | POST | **Изменить количество товара** |
+| `/api/v2/menu/goods` | POST | Товары по категории (пагинация) |
+| `/api/v1/menu/search` | POST | **Поиск товаров по тексту** |
+
+#### Корзина
+
+| Endpoint | Метод | Описание |
+|----------|-------|----------|
+| `/api/v1/cart` | POST | **Добавить товар** (quantity = инкремент) |
+| `/api/v1/cart/{cart_item_id}` | POST | **Изменить количество** (quantity = абсолют) |
+| `/api/v1/cart/{cart_item_id}` | DELETE | **Удалить товар из корзины** |
+| `/api/v2/cart` | DELETE | **Очистить всю корзину** |
 | `/eats/v1/cart/v2/multi-carts` | POST | Список всех корзин пользователя |
 | `/eats/v1/cart/v2/full-carts` | POST | Полная информация о корзине |
 | `/api/v1/cart/change_place` | POST | Сменить магазин в корзине |
+
+#### Оформление
+
+| Endpoint | Метод | Описание |
+|----------|-------|----------|
 | `/api/v2/cart/go-checkout` | POST | Подготовка к оплате |
+| `/checkout` | GET | Страница оплаты (UI) |
 
 ---
 
@@ -822,7 +843,31 @@ Content-Type: application/json
 **Важно:**
 - `cart_item_id` — ID товара в корзине (не `item_id` из каталога!)
 - `quantity` — **абсолютное** значение (не инкремент)
-- `quantity: 0` через API даёт ошибку — удаление работает только через UI
+
+---
+
+### Удалить товар из корзины
+
+```http
+DELETE /api/v1/cart/{cart_item_id}?placeSlug={slug}&longitude={lon}&latitude={lat}
+```
+
+**Параметры:**
+- `cart_item_id` — ID товара в корзине (получить из `/eats/v1/cart/v2/full-carts`)
+
+**Response:** Обновлённая корзина.
+
+---
+
+### Очистить всю корзину
+
+```http
+DELETE /api/v2/cart?placeSlug={slug}&longitude={lon}&latitude={lat}
+```
+
+Удаляет все товары из корзины указанного магазина.
+
+**Response:** Пустая корзина.
 
 ---
 
@@ -932,28 +977,45 @@ Content-Type: application/json
 ### UI Flow
 
 ```
-1. Поиск товара → /api/v1/menu/search
-2. Добавить в корзину → /api/v1/cart
+1. Получить список магазинов → /retail (парсить HTML)
+2. Поиск товара → POST /api/v1/menu/search
+3. Добавить в корзину → POST /api/v1/cart
    ↳ Если товары из другого магазина → попап "Перенести?"
-3. Изменить количество → /api/v1/cart/{cart_item_id}
-4. Просмотр корзины → /eats/v1/cart/v2/full-carts
-5. Оформление → /api/v2/cart/go-checkout
-6. Оплата → кнопка "Оплатить" (нажимает пользователь)
+4. Изменить количество → POST /api/v1/cart/{cart_item_id}
+5. Удалить товар → DELETE /api/v1/cart/{cart_item_id}
+6. Очистить корзину → DELETE /api/v2/cart
+7. Просмотр корзины → POST /eats/v1/cart/v2/full-carts
+8. Оформление → POST /api/v2/cart/go-checkout
+9. Оплата → кнопка "Оплатить" (нажимает пользователь)
 ```
 
 ---
 
-### Известные place_slug
+### Известные магазины
 
-| Магазин | Пример slug | Паттерн |
-|---------|-------------|---------|
-| Магнит | `magnit_celevaya_k6g7p` | `magnit_{location}_{hash}` |
-| Пятёрочка | `pyaterochka_abydf` | `pyaterochka_{hash}` |
-| Перекрёсток | `perekrestok_sxepk` | `perekrestok_{hash}` |
-| Лента | `lenta_{hash}` | `lenta_{hash}` |
-| ВкусВилл | `vkusvill_{hash}` | `vkusvill_{hash}` |
+Список магазинов доступен на странице `/retail`. Каждая ссылка содержит `placeSlug`.
 
-> Slug зависит от геолокации — один магазин в разных районах имеет разные slug.
+| Магазин | Пример slug | URL паттерн |
+|---------|-------------|-------------|
+| Пятёрочка | `pyaterochka_abydf` | `/retail/paterocka?placeSlug=...` |
+| Магнит | `magnit_fsclg` | `/retail/magnit_celevaya?placeSlug=...` |
+| Перекрёсток | `perekrestok_sxepk` | `/retail/perekrestok?placeSlug=...` |
+| Азбука вкуса | `azbukavkusa_..._umfkt` | `/retail/azbuka_vkusa?placeSlug=...` |
+| ВкусВилл Экспресс | `vkusvill_ekspress_x8rf5` | `/retail/vkusvill?placeSlug=...` |
+| ВкусВилл Гипер | `vkusvill_5j_..._26e` | `/retail/vkusvill_giper?placeSlug=...` |
+| Магнит Семейный | `magnit_semejnyj_5nd92` | `/retail/magnit_semejnyj_celevaya?placeSlug=...` |
+| Гипер Лента | `lenta_hqonb` | `/retail/lenta?placeSlug=...` |
+| Супер Лента | `super_nopih` | `/retail/lenta_onlajn?placeSlug=...` |
+| METRO | `metro_p7c64` | `/retail/metro_giper?placeSlug=...` |
+| АШАН | `ashan_gipermarket_pxv65` | `/retail/asan_giper?placeSlug=...` |
+| Дикси | `diksi_celevaya_z5439` | `/retail/diksi_celevaa?placeSlug=...` |
+| Монетка | `monetka_rz6j4` | `/retail/monetka_ritejl?placeSlug=...` |
+| М.Косметик | `magnit_kosmetik_celevaya_tvzlr` | `/retail/magnit_kosmetik_celevaya?placeSlug=...` |
+| Улыбка радуги | `ulybka_radugi_lcfot` | `/retail/ulybka_radugi?placeSlug=...` |
+| Аптека Вита | `vita_wdm8j` | `/retail/vita?placeSlug=...` |
+| Доктор Столетов | `doktor_stoletov_wyagx` | `/retail/doktor_stoletov?placeSlug=...` |
+
+> **Важно:** Slug зависит от геолокации — один магазин в разных районах имеет разные slug.
 
 ---
 
