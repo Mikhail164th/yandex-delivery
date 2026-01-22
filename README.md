@@ -242,12 +242,320 @@ new → estimating → ready_for_approval → accepted → performer_lookup
 | `estimating_failed` | Ошибка оценки |
 | `performer_not_found` | Курьер не найден |
 
+## Enum-значения
+
+### taxi_class (тариф)
+
+| Значение | Описание | Макс. вес | Макс. габариты |
+|----------|----------|-----------|----------------|
+| `courier` | Пеший/вело курьер | 10 кг | 0.5×0.5×0.5 м |
+| `express` | Авто курьер | 20 кг | Багажник легкового авто |
+| `cargo` | Грузовой | 300 кг | Зависит от `cargo_type` |
+
+### cargo_type (тип грузового)
+
+| Значение | Описание | Грузоподъёмность | Объём |
+|----------|----------|------------------|-------|
+| `van` | Каблук | 300 кг | 1 м³ |
+| `lcv_m` | Средний фургон | 700 кг | 3 м³ |
+| `lcv_l` | Большой фургон | 1400 кг | 6 м³ |
+
+### cargo_options (опции)
+
+| Значение | Описание |
+|----------|----------|
+| `thermobag` | Термосумка |
+| `auto_courier` | Только авто |
+| `door_to_door` | От двери до двери |
+
+### vat_code_str (НДС для фискализации)
+
+| Значение | Описание |
+|----------|----------|
+| `vat_none` | Без НДС |
+| `vat_0` | НДС 0% |
+| `vat_10` | НДС 10% |
+| `vat_20` | НДС 20% |
+| `vat_10_110` | НДС 10/110 |
+| `vat_20_120` | НДС 20/120 |
+
+### payment_method (способ оплаты)
+
+| Значение | Описание |
+|----------|----------|
+| `card` | Картой онлайн |
+| `cash` | Наличными курьеру |
+| `already_paid` | Уже оплачено |
+
+---
+
+# Other Day Delivery API
+
+Доставка на следующий день или в выбранный интервал.
+
+## Base URL
+
+```
+https://b2b-authproxy.taxi.yandex.net
+```
+
+## Эндпоинты
+
+| Метод | Endpoint | Описание |
+|-------|----------|----------|
+| POST | `/api/b2b/platform/offers/info` | Доступные интервалы доставки |
+| POST | `/api/b2b/platform/offers/create` | Создать оффер (зарезервировать слот) |
+| POST | `/api/b2b/platform/offers/confirm` | Подтвердить оффер |
+| POST | `/api/b2b/platform/offers/cancel` | Отменить оффер |
+| POST | `/api/b2b/platform/request/info` | Статус заявки |
+| POST | `/api/b2b/platform/request/cancel` | Отменить заявку |
+| GET | `/api/b2b/platform/request/history` | История заявок |
+
+## Пример: получить интервалы
+
+```bash
+curl -X POST "https://b2b-authproxy.taxi.yandex.net/api/b2b/platform/offers/info" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "info": {
+      "operator_request_id": "my-order-123"
+    },
+    "source": {
+      "platform_station": {
+        "platform_id": "fbed3aa1-2cc6-4370-ab4d-59c5cc9bb924"
+      }
+    },
+    "destination": {
+      "type": "custom_location",
+      "custom_location": {
+        "coordinates": {"lat": 55.7558, "lon": 37.6173},
+        "details": {"full_address": "Москва, ул. Тверская, 1"}
+      }
+    },
+    "items": [{
+      "count": 1,
+      "name": "Товар",
+      "article": "SKU-001",
+      "billing_details": {"unit_price": 1000, "assessed_unit_price": 1000}
+    }],
+    "last_mile_policy": "self_pickup",
+    "recipient_info": {
+      "phone": "+79001234567",
+      "first_name": "Иван"
+    }
+  }'
+```
+
+Ответ:
+```json
+{
+  "offers": [
+    {
+      "offer_id": "offer-uuid",
+      "delivery_interval": {
+        "from": "2024-01-15T10:00:00+03:00",
+        "to": "2024-01-15T14:00:00+03:00"
+      },
+      "price": {"total": "350.00", "currency": "RUB"}
+    }
+  ]
+}
+```
+
+## Отличия от Express API
+
+| Параметр | Express | Other Day |
+|----------|---------|-----------|
+| Base URL | b2b.taxi.yandex.net | b2b-authproxy.taxi.yandex.net |
+| Время доставки | 30-90 мин | Выбранный интервал |
+| Склад | Координаты в запросе | `platform_id` (заранее создан) |
+| Создание | Сразу `/claims/create` | `/offers/info` → `/offers/create` → `/offers/confirm` |
+
+---
+
+# Callbacks (Webhooks)
+
+## Настройка
+
+Личный кабинет → Интеграции → Webhook URL
+
+## Формат
+
+```http
+POST /your-webhook-endpoint
+Content-Type: application/json
+```
+
+```json
+{
+  "claim_id": "abc123",
+  "status": "performer_found",
+  "updated_ts": "2024-01-15T12:00:00+03:00",
+  "performer_info": {
+    "courier_name": "Иван",
+    "legal_name": "ООО Курьер",
+    "car_model": "Lada Granta",
+    "car_number": "А123БВ777"
+  }
+}
+```
+
+## Подтверждение
+
+Ответить `200 OK` в течение 5 секунд. При ошибке — retry с экспоненциальным backoff.
+
+---
+
+# Наложенный платёж (COD)
+
+## Параметры в items
+
+```json
+{
+  "items": [{
+    "title": "Товар",
+    "cost_value": "1000",
+    "cost_currency": "RUB",
+    "fiscalization": {
+      "article": "SKU-001",
+      "vat_code_str": "vat_20",
+      "supplier_inn": "7707083893"
+    }
+  }]
+}
+```
+
+## Параметры в route_points
+
+```json
+{
+  "type": "destination",
+  "payment_on_delivery": {
+    "payment_method": "cash",
+    "customer": {
+      "phone": "+79001234567"
+    }
+  }
+}
+```
+
+## Статусы оплаты
+
+| Статус | Описание |
+|--------|----------|
+| `pay_waiting` | Ожидание оплаты |
+| `paid` | Оплачено |
+| `payment_failed` | Ошибка оплаты |
+
+---
+
+# Фискализация
+
+## fiscal_receipt_info
+
+```json
+{
+  "fiscal_receipt_info": {
+    "vat_code_str": "vat_20",
+    "personal_tin": "123456789012",
+    "title_for_receipt": "Доставка",
+    "supplier_inn": "7707083893"
+  }
+}
+```
+
+## Поля
+
+| Поле | Обязательное | Описание |
+|------|--------------|----------|
+| `vat_code_str` | Да | Код НДС |
+| `personal_tin` | Нет | ИНН получателя (для B2B) |
+| `title_for_receipt` | Нет | Название в чеке |
+| `supplier_inn` | Нет | ИНН поставщика (для агентской схемы) |
+
+---
+
+# Мультиточечная доставка
+
+## Типы точек
+
+| Тип | Описание |
+|-----|----------|
+| `source` | Точка забора |
+| `destination` | Точка доставки |
+| `return` | Точка возврата |
+
+## Пример: 1 забор → 3 доставки
+
+```json
+{
+  "route_points": [
+    {"point_id": 1, "visit_order": 1, "type": "source", ...},
+    {"point_id": 2, "visit_order": 2, "type": "destination", ...},
+    {"point_id": 3, "visit_order": 3, "type": "destination", ...},
+    {"point_id": 4, "visit_order": 4, "type": "destination", ...}
+  ],
+  "items": [
+    {"pickup_point": 1, "droppof_point": 2, ...},
+    {"pickup_point": 1, "droppof_point": 3, ...},
+    {"pickup_point": 1, "droppof_point": 4, ...}
+  ]
+}
+```
+
+## Ограничения
+
+- Максимум 10 точек
+- Все точки в одном городе
+- Порядок посещения фиксирован (`visit_order`)
+
+---
+
+# Коды ошибок
+
+## HTTP статусы
+
+| Код | Описание |
+|-----|----------|
+| 400 | Невалидный запрос |
+| 401 | Невалидный токен |
+| 403 | Нет доступа |
+| 404 | Заявка не найдена |
+| 409 | Конфликт (дубликат request_id) |
+| 429 | Rate limit |
+| 500 | Внутренняя ошибка |
+
+## Бизнес-ошибки
+
+| Код | Описание |
+|-----|----------|
+| `estimating_failed` | Не удалось рассчитать маршрут |
+| `performer_not_found` | Нет доступных курьеров |
+| `address_not_found` | Адрес не найден |
+| `out_of_zone` | Адрес вне зоны доставки |
+| `too_heavy` | Превышен вес |
+| `too_large` | Превышены габариты |
+
+## Формат ошибки
+
+```json
+{
+  "code": "estimating_failed",
+  "message": "Не удалось построить маршрут между точками"
+}
+```
+
+---
+
 ## Технические требования
 
 - TLS 1.2+
 - Координаты: `[longitude, latitude]` — долгота первая!
 - `request_id` — уникальный UUID для идемпотентности
 - Геокодирование: используй Yandex Geocoder API
+- Таймаут: рекомендуется 30 секунд
+- Retry: экспоненциальный backoff, максимум 3 попытки
 
 ---
 
